@@ -175,40 +175,6 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         return objects;
     }
 
-//    @Override
-//    public int save(Object object) throws PersistenceException {
-//        Class aClass = object.getClass();
-//        if (!aClass.isAnnotationPresent(Entity.class)) {
-//            return 0;
-//        }
-//
-//        for (Field field : aClass.getDeclaredFields()) {
-//            if (field.isAnnotationPresent(Transient.class)) {
-//                continue;
-//            }
-//
-//            if (field.isAnnotationPresent(Id.class)) {
-//                try {
-//                    field.setAccessible(true);
-//                    int id = 0;
-//                    if (field.getInt(object) == 0) {
-//                        id = insertObject(object);
-//                        field.set(object, id);
-//                    } else {
-//                        updateObject(object);
-//                        id = field.getInt(object);
-//                    }
-//                    field.setAccessible(false);
-//                    return id;
-//                } catch (IllegalAccessException e) {
-//                    e.printStackTrace();
-//                }
-//            }
-//        }
-//
-//        return 0;
-//    }
-
     @Override
     public int save(Object object) throws PersistenceException {
         Class aClass = object.getClass();
@@ -332,41 +298,4 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
         return SQLType;
     }
-
-    //odlozene, keby nahodou trebalo takto
-//    if (fieldValue == null) {
-//        ps.setNull(i, Types.NULL);
-//    } else if (fieldValue instanceof Integer) {
-//        ps.setInt(i, (Integer) fieldValue);
-//    } else if (fieldValue instanceof String || fieldValue instanceof Character) {
-//        ps.setString(i, String.valueOf(fieldValue));
-//    } else if (fieldValue instanceof Double) {
-//        ps.setDouble(i, (Double) fieldValue);
-//    } else if (fieldValue instanceof Float) {
-//        ps.setFloat(i, (Float) fieldValue);
-//    } else if (fieldValue instanceof Long) {
-//        ps.setLong(i, (Long) fieldValue);
-//    } else if (fieldValue instanceof Short) {
-//        ps.setShort(i, (Short) fieldValue);
-//    } else if (fieldValue instanceof Byte) {
-//        ps.setByte(i, (Byte) fieldValue);
-//    } else if (fieldValue instanceof Boolean) {
-//        ps.setBoolean(i, (Boolean) fieldValue);
-//    } else {
-//        Field field = getFirstAnnotatedField(fieldValue.getClass().getDeclaredFields(), Id.class);
-//
-//        try {
-//            field.setAccessible(true);
-//            if (field.getInt(fieldValue) == 0) {
-//                ps.setInt(i, save(fieldValue));
-//            } else {
-//                ps.setInt(i, field.getInt(fieldValue));
-//            }
-//
-//            field.setAccessible(false);
-//        } catch (IllegalAccessException e) {
-//            e.printStackTrace();
-//        }
-//        break;
-//    }
 }
