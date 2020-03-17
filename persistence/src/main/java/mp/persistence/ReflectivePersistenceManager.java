@@ -1,5 +1,7 @@
 package mp.persistence;
 
+import mp.persistence.util.UpsertBuilder;
+
 import javax.persistence.Entity;
 import javax.persistence.Id;
 import javax.persistence.ManyToOne;
@@ -9,6 +11,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 public class ReflectivePersistenceManager implements PersistenceManager {
@@ -19,56 +22,52 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     }
 
     @Override
-    public void createTables(Class... classes) {
+    public void createTables(Class... classes) throws PersistenceException {
         for (Class aClass : classes) {
             if (!aClass.isAnnotationPresent(Entity.class)) {
-                continue;
+                throw new PersistenceException("No Entity annotation for class " + aClass.getName());
             }
 
             List<String> foreignKeys = new ArrayList<>();
             List<String> referencedTables = new ArrayList<>();
             List<String> referencedFields = new ArrayList<>();
 
-            StringBuilder sb = new StringBuilder("CREATE TABLE IF NOT EXISTS ");
-            sb.append(aClass.getSimpleName().toLowerCase()).append(" (");
+            StringBuilder queryStringBuilder = new StringBuilder("CREATE TABLE IF NOT EXISTS ");
+            queryStringBuilder.append(aClass.getSimpleName().toLowerCase()).append(" (");
             for (Field field : aClass.getDeclaredFields()) {
                 if (field.isAnnotationPresent(Transient.class)) {
                     continue;
                 }
 
-                sb.append(field.getName()).append(" ");
-                sb.append(getSQLType(field.getType().getSimpleName()));
+                queryStringBuilder.append(field.getName()).append(" ");
+                queryStringBuilder.append(getSQLType(field.getType().getSimpleName()));
+                //TODO polymorfizmus
                 if (field.isAnnotationPresent(ManyToOne.class)) {
                     Field idField = getFirstAnnotatedField(field.getType().getDeclaredFields(), Id.class);
 
-                    if (idField == null) {
-                        throw new PersistenceException("No ID field set for class " + field.getType().getSimpleName());
-                    }
-
                     foreignKeys.add(field.getName());
-                    referencedTables.add(field.getType().getSimpleName().toLowerCase());
+                    referencedTables.add(field.getType().getSimpleName().toLowerCase()); //TODO field.get(o).getType?
                     referencedFields.add(idField.getName());
                 }
                 if (field.isAnnotationPresent(Id.class)) {
-                    sb.append(" PRIMARY KEY");
+                    queryStringBuilder.append(" PRIMARY KEY");
                 }
-                sb.append(",");
+                queryStringBuilder.append(",");
             }
-            sb.setLength(sb.length() - 1);
+            queryStringBuilder.setLength(queryStringBuilder.length() - 1);
 
             for (int i = 0; i < foreignKeys.size(); i++) {
-                sb.append(", FOREIGN KEY(").append(foreignKeys.get(i)).append(")")
+                queryStringBuilder.append(", FOREIGN KEY(").append(foreignKeys.get(i)).append(")")
                         .append(" REFERENCES ").append(referencedTables.get(i))
                         .append("(").append(referencedFields.get(i)).append(")");
-                ;
             }
 
-            sb.append(")");
-            System.out.println(sb.toString());
+            queryStringBuilder.append(")");
+            System.out.println(queryStringBuilder.toString());
 
             try {
                 Statement statement = connection.createStatement();
-                statement.executeUpdate(sb.toString());
+                statement.executeUpdate(queryStringBuilder.toString());
             } catch (SQLException e) {
                 e.printStackTrace();
             }
@@ -77,13 +76,16 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
     @Override
     public <T> List<T> getAll(Class<T> aClass) throws PersistenceException {
-        StringBuilder sb = new StringBuilder("SELECT * FROM ");
-        sb.append(aClass.getSimpleName().toLowerCase());
+        if (!aClass.isAnnotationPresent(Entity.class)) {
+            throw new PersistenceException("No Entity annotation for class " + aClass.getName());
+        }
+
+        String query = "SELECT * FROM " + aClass.getSimpleName().toLowerCase();
 
         List<T> objects;
         try {
             Statement statement = connection.createStatement();
-            ResultSet rs = statement.executeQuery(sb.toString());
+            ResultSet rs = statement.executeQuery(query);
             objects = createObjectsFromResultSet(aClass, rs);
         } catch (SQLException e) {
             e.printStackTrace();
@@ -95,17 +97,16 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
     @Override
     public <T> T get(Class<T> aClass, int id) throws PersistenceException {
-        Field idField = getFirstAnnotatedField(aClass.getDeclaredFields(), Id.class);
-        T object;
+        if (!aClass.isAnnotationPresent(Entity.class)) {
+            throw new PersistenceException("No Entity annotation for class " + aClass.getName());
+        }
 
+        Field idField = getFirstAnnotatedField(aClass.getDeclaredFields(), Id.class);
+
+        T object;
         try {
-            object = aClass.getConstructor().newInstance();
-            idField.setAccessible(true);
-            idField.set(object, id);
-            idField.setAccessible(false);
             object = getBy(aClass, idField.getName(), id).get(0);
-        } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException
-                | IndexOutOfBoundsException e) {
+        } catch (IndexOutOfBoundsException e) {
             e.printStackTrace();
             return null;
         }
@@ -113,61 +114,21 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         return object;
     }
 
-    private Field getFirstAnnotatedField(Field[] fields, Class<? extends Annotation> annotationClass) throws PersistenceException {
-        for (Field field : fields) {
-            if (field.isAnnotationPresent(annotationClass)) {
-                return field;
-            }
-        }
-        throw new PersistenceException("No " + annotationClass + " field for " + fields[0].getType().getSimpleName());
-    }
-
     @Override
-    public <T> List<T> getBy(Class<T> aClass, String fieldName, Object value) {
-        StringBuilder query = new StringBuilder("SELECT * FROM ").append(aClass.getSimpleName().toLowerCase())
-                .append(" WHERE ").append(fieldName.toLowerCase()).append("= ?");
+    public <T> List<T> getBy(Class<T> aClass, String fieldName, Object value) throws PersistenceException {
+        if (!aClass.isAnnotationPresent(Entity.class)) {
+            throw new PersistenceException("No Entity annotation for class " + aClass.getName());
+        }
 
-        ResultSet rs;
+        String query = "SELECT * FROM " + aClass.getSimpleName().toLowerCase() + " WHERE " + fieldName.toLowerCase() + "= ?";
+
+        List<T> objects;
         try {
-            PreparedStatement ps = connection.prepareStatement(query.toString());
-            ps.setObject(1, value); //TODO vymysliet ako to urobit
-            rs = ps.executeQuery();
+            PreparedStatement ps = connection.prepareStatement(query);
+            ps.setObject(1, value);
+            ResultSet rs = ps.executeQuery();
+            objects = createObjectsFromResultSet(aClass, rs);
         } catch (SQLException e) {
-            e.printStackTrace();
-            return null;
-        }
-
-        return createObjectsFromResultSet(aClass, rs);
-    }
-
-    private <T> List<T> createObjectsFromResultSet(Class<T> aClass, ResultSet rs) {
-        if (aClass == null || rs == null) {
-            return null;
-        }
-
-        List<T> objects = new ArrayList<>();
-
-        try {
-            while (rs.next()) {
-                T object = aClass.getConstructor().newInstance();
-                for (Field field : aClass.getDeclaredFields()) {
-                    if (field.isAnnotationPresent(Transient.class)) {
-                        continue;
-                    }
-
-                    field.setAccessible(true);
-                    Object fieldValue = rs.getObject(field.getName());
-                    if (field.isAnnotationPresent(ManyToOne.class)) {
-                        field.set(object, get(field.getType(), (Integer) fieldValue)); //predpoklada sa, ze ID je int
-                    } else {
-                        field.set(object, fieldValue);
-                    }
-                    field.setAccessible(false);
-                }
-                objects.add(object);
-            }
-        } catch (SQLException | InstantiationException | IllegalAccessException | InvocationTargetException
-                | NoSuchMethodException e) {
             e.printStackTrace();
             return null;
         }
@@ -180,16 +141,12 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         Class aClass = object.getClass();
 
         if (!aClass.isAnnotationPresent(Entity.class)) {
-            return 0;
+            throw new PersistenceException("No Entity annotation for class " + aClass.getName());
         }
 
-        Field idField = null;
         List<Object> fieldValues = new ArrayList<>();
-        List<String> fieldNames = new ArrayList<>();
 
-        StringBuilder sqlStringBuilder = new StringBuilder("INSERT INTO ");
-        StringBuilder placeholdersStringBuilder = new StringBuilder();
-        sqlStringBuilder.append(aClass.getSimpleName()).append(" (");
+        UpsertBuilder upsertBuilder = new UpsertBuilder(aClass.getSimpleName());
         for (Field field : aClass.getDeclaredFields()) {
             if (field.isAnnotationPresent(Transient.class)) {
                 continue;
@@ -204,36 +161,19 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             }
 
             if (field.isAnnotationPresent(Id.class)) {
-                idField = field;
-                if ((int)fieldValue == 0) {
+                upsertBuilder.addOnConflictColumnName(field.getName());
+                //Kedze sa robi upsert, tak nemoze byt 0 ID, pretoze ho tam insertne ak to nie je duplikat
+                if ((int) fieldValue == 0) {
                     continue;
                 }
             }
 
             fieldValues.add(fieldValue);
-            fieldNames.add(field.getName());
-            sqlStringBuilder.append(field.getName()).append(",");
-            placeholdersStringBuilder.append("?,");
+            upsertBuilder.addColumnName(field.getName());
         }
-
-        sqlStringBuilder.setLength(sqlStringBuilder.length() - 1);
-        placeholdersStringBuilder.setLength(placeholdersStringBuilder.length() - 1);
-        sqlStringBuilder.append(") VALUES (");
-        sqlStringBuilder.append(placeholdersStringBuilder.toString());
-        sqlStringBuilder.append(") ON CONFLICT (");
-        if (idField != null) {
-            sqlStringBuilder.append(idField.getName());
-        }
-        sqlStringBuilder.append(") DO UPDATE SET ");
-        for (String fieldName : fieldNames) {
-            sqlStringBuilder.append(fieldName).append("=excluded.").append(fieldName).append(",");
-        }
-        sqlStringBuilder.setLength(sqlStringBuilder.length() - 1);
-
-        System.out.println(sqlStringBuilder);
 
         try {
-            PreparedStatement ps = connection.prepareStatement(sqlStringBuilder.toString(), Statement.RETURN_GENERATED_KEYS);
+            PreparedStatement ps = connection.prepareStatement(upsertBuilder.toString(), Statement.RETURN_GENERATED_KEYS);
             int i = 1;
             for (Object fieldValue : fieldValues) {
                 if (fieldValue == null) {
@@ -272,6 +212,50 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         }
 
         return 0;
+    }
+
+    private Field getFirstAnnotatedField(Field[] fields, Class<? extends Annotation> annotationClass) throws PersistenceException {
+        for (Field field : fields) {
+            if (field.isAnnotationPresent(annotationClass)) {
+                return field;
+            }
+        }
+        throw new PersistenceException("No " + annotationClass + " annotation for " + fields[0].getType().getName());
+    }
+
+    private <T> List<T> createObjectsFromResultSet(Class<T> aClass, ResultSet rs) {
+        if (aClass == null || rs == null) {
+            return null;
+        }
+
+        List<T> objects = new ArrayList<>();
+
+        try {
+            while (rs.next()) {
+                T object = aClass.getConstructor().newInstance();
+                for (Field field : aClass.getDeclaredFields()) {
+                    if (field.isAnnotationPresent(Transient.class)) {
+                        continue;
+                    }
+
+                    field.setAccessible(true);
+                    Object fieldValue = rs.getObject(field.getName());
+                    if (field.isAnnotationPresent(ManyToOne.class)) {
+                        field.set(object, get(field.getType(), (Integer) fieldValue)); //predpoklada sa, ze ID je int
+                    } else {
+                        field.set(object, fieldValue);
+                    }
+                    field.setAccessible(false);
+                }
+                objects.add(object);
+            }
+        } catch (SQLException | InstantiationException | IllegalAccessException | InvocationTargetException
+                | NoSuchMethodException e) {
+            e.printStackTrace();
+            return null;
+        }
+
+        return objects;
     }
 
     private String getSQLType(String type) {
