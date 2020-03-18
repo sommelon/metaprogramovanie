@@ -11,7 +11,6 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.sql.*;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 
 public class ReflectivePersistenceManager implements PersistenceManager {
@@ -41,12 +40,11 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
                 queryStringBuilder.append(field.getName()).append(" ");
                 queryStringBuilder.append(getSQLType(field.getType().getSimpleName()));
-                //TODO polymorfizmus
                 if (field.isAnnotationPresent(ManyToOne.class)) {
                     Field idField = getFirstAnnotatedField(field.getType().getDeclaredFields(), Id.class);
 
                     foreignKeys.add(field.getName());
-                    referencedTables.add(field.getType().getSimpleName().toLowerCase()); //TODO field.get(o).getType?
+                    referencedTables.add(field.getType().getSimpleName().toLowerCase());
                     referencedFields.add(idField.getName());
                 }
                 if (field.isAnnotationPresent(Id.class)) {
@@ -139,6 +137,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     @Override
     public int save(Object object) throws PersistenceException {
         Class aClass = object.getClass();
+        int objectID = 0;
 
         if (!aClass.isAnnotationPresent(Entity.class)) {
             throw new PersistenceException("No Entity annotation for class " + aClass.getName());
@@ -183,18 +182,14 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                 } else {
                     Field field = getFirstAnnotatedField(fieldValue.getClass().getDeclaredFields(), Id.class);
 
-                    try {
-                        field.setAccessible(true);
-                        if (field.getInt(fieldValue) == 0) {
-                            ps.setInt(i, save(fieldValue));
-                        } else {
-                            ps.setInt(i, field.getInt(fieldValue));
-                        }
-
-                        field.setAccessible(false);
-                    } catch (IllegalAccessException e) {
-                        e.printStackTrace();
+                    field.setAccessible(true);
+                    if (field.getInt(fieldValue) == 0) {
+                        ps.setInt(i, save(fieldValue));
+                    } else {
+                        ps.setInt(i, field.getInt(fieldValue));
                     }
+
+                    field.setAccessible(false);
                     break;
                 }
                 System.out.print(fieldValue + ", ");
@@ -205,13 +200,13 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             ps.executeUpdate();
             ResultSet rs = ps.getGeneratedKeys();
             if (rs.next()) {
-                return rs.getInt(1);
+                objectID = rs.getInt(1);
             }
-        } catch (SQLException e) {
+        } catch (SQLException | IllegalAccessException e) {
             e.printStackTrace();
         }
 
-        return 0;
+        return objectID;
     }
 
     private Field getFirstAnnotatedField(Field[] fields, Class<? extends Annotation> annotationClass) throws PersistenceException {
