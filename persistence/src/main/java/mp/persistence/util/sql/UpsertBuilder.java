@@ -1,4 +1,4 @@
-package mp.persistence.util;
+package mp.persistence.util.sql;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -12,18 +12,18 @@ public class UpsertBuilder {
         this.tableName = tableName;
     }
 
-    public void addColumnName(String columnName){
-        if (columnName == null || columnName.equals("")) {
-            return;
+    public UpsertBuilder addColumnName(String columnName){
+        if (columnName != null && !columnName.equals("")) {
+            columnNames.add(columnName);
         }
-        columnNames.add(columnName);
+        return this;
     }
 
-    public void addOnConflictColumnName(String columnName){
-        if (columnName == null || columnName.equals("")) {
-            return;
+    public UpsertBuilder addOnConflictColumnName(String columnName){
+        if (columnName != null && !columnName.equals("")) {
+            onConflictColumnNames.add(columnName);
         }
-        onConflictColumnNames.add(columnName);
+        return this;
     }
 
     @Override

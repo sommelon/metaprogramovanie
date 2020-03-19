@@ -1,6 +1,7 @@
 package mp.persistence;
 
-import mp.persistence.util.UpsertBuilder;
+import mp.persistence.util.sql.SQLType;
+import mp.persistence.util.sql.*;
 
 import javax.persistence.Entity;
 import javax.persistence.Id;
@@ -27,45 +28,32 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                 throw new PersistenceException("No Entity annotation for class " + aClass.getName());
             }
 
-            List<String> foreignKeys = new ArrayList<>();
-            List<String> referencedTables = new ArrayList<>();
-            List<String> referencedFields = new ArrayList<>();
-
-            StringBuilder queryStringBuilder = new StringBuilder("CREATE TABLE IF NOT EXISTS ");
-            queryStringBuilder.append(aClass.getSimpleName().toLowerCase()).append(" (");
+            CreateTableBuilder createTableBuilder = new CreateTableBuilder(aClass.getSimpleName());
             for (Field field : aClass.getDeclaredFields()) {
                 if (field.isAnnotationPresent(Transient.class)) {
                     continue;
                 }
-
-                queryStringBuilder.append(field.getName()).append(" ");
-                queryStringBuilder.append(getSQLType(field.getType().getSimpleName()));
+                Column column = new Column(field.getName(), SQLType.getSQLTypeFromClass((field.getType())));
                 if (field.isAnnotationPresent(ManyToOne.class)) {
-                    Field idField = getFirstAnnotatedField(field.getType().getDeclaredFields(), Id.class);
-
-                    foreignKeys.add(field.getName());
-                    referencedTables.add(field.getType().getSimpleName().toLowerCase());
-                    referencedFields.add(idField.getName());
+                    createTableBuilder.addForeignKey(
+                            new ForeignKey(field.getName(),
+                                    field.getType().getSimpleName(),
+                                    getFirstAnnotatedField(field.getType().getDeclaredFields(), Id.class).getName()
+                            )
+                    );
                 }
                 if (field.isAnnotationPresent(Id.class)) {
-                    queryStringBuilder.append(" PRIMARY KEY");
+                    column.addConstraint(Constraint.NOT_NULL);
+                    column.addConstraint(Constraint.PRIMARY_KEY);
                 }
-                queryStringBuilder.append(",");
-            }
-            queryStringBuilder.setLength(queryStringBuilder.length() - 1);
-
-            for (int i = 0; i < foreignKeys.size(); i++) {
-                queryStringBuilder.append(", FOREIGN KEY(").append(foreignKeys.get(i)).append(")")
-                        .append(" REFERENCES ").append(referencedTables.get(i))
-                        .append("(").append(referencedFields.get(i)).append(")");
+                createTableBuilder.addColumn(column);
             }
 
-            queryStringBuilder.append(")");
-            System.out.println(queryStringBuilder.toString());
+            System.out.println(createTableBuilder.toString());
 
             try {
                 Statement statement = connection.createStatement();
-                statement.executeUpdate(queryStringBuilder.toString());
+                statement.executeUpdate(createTableBuilder.toString());
             } catch (SQLException e) {
                 e.printStackTrace();
             }
@@ -78,7 +66,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             throw new PersistenceException("No Entity annotation for class " + aClass.getName());
         }
 
-        String query = "SELECT * FROM " + aClass.getSimpleName().toLowerCase();
+        String query = "SELECT * FROM " + aClass.getSimpleName();
 
         List<T> objects;
         try {
@@ -118,7 +106,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             throw new PersistenceException("No Entity annotation for class " + aClass.getName());
         }
 
-        String query = "SELECT * FROM " + aClass.getSimpleName().toLowerCase() + " WHERE " + fieldName.toLowerCase() + "= ?";
+        String query = "SELECT * FROM " + aClass.getSimpleName() + " WHERE " + fieldName + "= ?";
 
         List<T> objects;
         try {
@@ -137,7 +125,6 @@ public class ReflectivePersistenceManager implements PersistenceManager {
     @Override
     public int save(Object object) throws PersistenceException {
         Class aClass = object.getClass();
-        int objectID = 0;
 
         if (!aClass.isAnnotationPresent(Entity.class)) {
             throw new PersistenceException("No Entity annotation for class " + aClass.getName());
@@ -161,7 +148,8 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
             if (field.isAnnotationPresent(Id.class)) {
                 upsertBuilder.addOnConflictColumnName(field.getName());
-                //Kedze sa robi upsert, tak nemoze byt 0 ID, pretoze ho tam insertne ak to nie je duplikat
+                //Kedze sa robi upsert, tak nemoze byt ID 0, pretoze ho tam insertne ak to nie je duplikat.
+                // Preto sa prerusi cyklus, aby sa nepridal ID stlpec do upsertu.
                 if ((int) fieldValue == 0) {
                     continue;
                 }
@@ -170,43 +158,40 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             fieldValues.add(fieldValue);
             upsertBuilder.addColumnName(field.getName());
         }
-
+        System.out.println();
         try {
             PreparedStatement ps = connection.prepareStatement(upsertBuilder.toString(), Statement.RETURN_GENERATED_KEYS);
-            int i = 1;
-            for (Object fieldValue : fieldValues) {
-                if (fieldValue == null) {
-                    ps.setNull(i, Types.NULL);
-                } else if (fieldValue.getClass().getPackageName().startsWith("java.lang")) {
-                    ps.setObject(i, fieldValue);
+            for (int i = 0; i < fieldValues.size(); i++) {
+                if (fieldValues.get(i) == null) {
+                    ps.setNull(i + 1, Types.NULL);
+                } else if (fieldValues.get(i).getClass().getPackageName().startsWith("java.lang")) {
+                    ps.setObject(i + 1, fieldValues.get(i));
                 } else {
-                    Field field = getFirstAnnotatedField(fieldValue.getClass().getDeclaredFields(), Id.class);
+                    Field field = getFirstAnnotatedField(fieldValues.get(i).getClass().getDeclaredFields(), Id.class);
 
                     field.setAccessible(true);
-                    if (field.getInt(fieldValue) == 0) {
-                        ps.setInt(i, save(fieldValue));
+                    if (field.getInt(fieldValues.get(i)) == 0) {
+                        ps.setInt(i + 1, save(fieldValues.get(i)));
                     } else {
-                        ps.setInt(i, field.getInt(fieldValue));
+                        ps.setInt(i + 1, field.getInt(fieldValues.get(i)));
                     }
 
                     field.setAccessible(false);
                     break;
                 }
-                System.out.print(fieldValue + ", ");
-                i++;
+                System.out.print(fieldValues.get(i) + ", ");
             }
-            System.out.println();
 
             ps.executeUpdate();
             ResultSet rs = ps.getGeneratedKeys();
             if (rs.next()) {
-                objectID = rs.getInt(1);
+                return rs.getInt(1);
             }
         } catch (SQLException | IllegalAccessException e) {
             e.printStackTrace();
         }
 
-        return objectID;
+        return 0;
     }
 
     private Field getFirstAnnotatedField(Field[] fields, Class<? extends Annotation> annotationClass) throws PersistenceException {
@@ -253,28 +238,4 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         return objects;
     }
 
-    private String getSQLType(String type) {
-        String SQLType = "INTEGER"; //Ak type nie je zakladny JAVA objekt, je to cudzi kluc a predpoklada sa, ze ID je int
-        switch (type.toLowerCase()) {
-            case "int":
-            case "integer":
-            case "short":
-            case "long":
-            case "byte":
-                SQLType = "INTEGER";
-                break;
-            case "double":
-            case "float":
-                SQLType = "REAL";
-                break;
-            case "string":
-            case "char":
-            case "character":
-            case "boolean":
-                SQLType = "TEXT";
-                break;
-        }
-
-        return SQLType;
-    }
 }
