@@ -1,19 +1,19 @@
 package mp.persistence.util.sql;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.EnumSet;
 
 public class Column {
     private String name;
     private SQLType sqlType;
-    private List<Constraint> constraints = new ArrayList<>();
+    private int length;
+    private EnumSet<Constraint> constraints = EnumSet.noneOf(Constraint.class);
 
     public Column(String name, SQLType sqlType) {
         this.name = name;
         this.sqlType = sqlType;
     }
 
-    public Column(String name, SQLType sqlType, List<Constraint> constraints) {
+    public Column(String name, SQLType sqlType, EnumSet<Constraint> constraints) {
         this.name = name;
         this.sqlType = sqlType;
         this.constraints = constraints;
@@ -21,6 +21,10 @@ public class Column {
 
     public void setSqlType(SQLType sqlType) {
         this.sqlType = sqlType;
+    }
+
+    public void setLength(int length) {
+        this.length = length;
     }
 
     public void addConstraint(Constraint constraint){

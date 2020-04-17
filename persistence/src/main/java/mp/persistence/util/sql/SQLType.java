@@ -17,9 +17,9 @@ public enum SQLType {
         return this.label;
     }
 
-    public static SQLType getSQLTypeFromClass(Class type) {
+    public static SQLType getSQLTypeFromClass(Class aClass) {
         SQLType sqlType;
-        switch (type.getSimpleName().toLowerCase()) {
+        switch (aClass.getSimpleName().toLowerCase()) {
             case "double":
             case "float":
                 sqlType = SQLType.REAL;

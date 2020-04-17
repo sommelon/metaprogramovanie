@@ -1,18 +1,21 @@
 package mp.example;
 
+import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.Id;
 import javax.persistence.ManyToOne;
 
-@Entity
+@Entity(name = "osoba")
 public class Person {
     @Id
     private int id;
+    @Column(length = 40, nullable = false)
     private String surname;
     private String name;
     private int age;
 
     @ManyToOne
+    @Column(name="oddelenie")
     private Department department;
 
     public Person(String surname, String name, int age) {

@@ -28,24 +28,34 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                 throw new PersistenceException("No Entity annotation for class " + aClass.getName());
             }
 
-            CreateTableBuilder createTableBuilder = new CreateTableBuilder(aClass.getSimpleName());
+            CreateTableBuilder createTableBuilder = new CreateTableBuilder(getTableNameByClass(aClass));
             for (Field field : aClass.getDeclaredFields()) {
                 if (field.isAnnotationPresent(Transient.class)) {
                     continue;
                 }
-                Column column = new Column(field.getName(), SQLType.getSQLTypeFromClass((field.getType())));
+
+                Column column = new Column(getColumnNameByField(field), SQLType.getSQLTypeFromClass((field.getType())));
+                if (field.isAnnotationPresent(javax.persistence.Column.class)){
+                    column.setLength(field.getAnnotation(javax.persistence.Column.class).length());
+                    if (!field.getAnnotation(javax.persistence.Column.class).nullable()){
+                        column.addConstraint(Constraint.NOT_NULL);
+                    }
+                }
+
                 if (field.isAnnotationPresent(ManyToOne.class)) {
                     createTableBuilder.addForeignKey(
-                            new ForeignKey(field.getName(),
-                                    field.getType().getSimpleName(),
-                                    getFirstAnnotatedField(field.getType().getDeclaredFields(), Id.class).getName()
+                            new ForeignKey(getColumnNameByField(field),
+                                    getTableNameByClass(field.getType()),
+                                    getColumnNameByField(getFirstAnnotatedField(field.getType().getDeclaredFields(), Id.class))
                             )
                     );
                 }
+
                 if (field.isAnnotationPresent(Id.class)) {
                     column.addConstraint(Constraint.NOT_NULL);
                     column.addConstraint(Constraint.PRIMARY_KEY);
                 }
+
                 createTableBuilder.addColumn(column);
             }
 
@@ -66,7 +76,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             throw new PersistenceException("No Entity annotation for class " + aClass.getName());
         }
 
-        String query = "SELECT * FROM " + aClass.getSimpleName();
+        String query = "SELECT * FROM " + getTableNameByClass(aClass);
 
         List<T> objects;
         try {
@@ -91,7 +101,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
         T object;
         try {
-            object = getBy(aClass, idField.getName(), id).get(0);
+            object = getBy(aClass, getColumnNameByField(idField), id).get(0);
         } catch (IndexOutOfBoundsException e) {
             e.printStackTrace();
             return null;
@@ -106,7 +116,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             throw new PersistenceException("No Entity annotation for class " + aClass.getName());
         }
 
-        String query = "SELECT * FROM " + aClass.getSimpleName() + " WHERE " + fieldName + "= ?";
+        String query = "SELECT * FROM " + getTableNameByClass(aClass) + " WHERE " + fieldName + "= ?";
 
         List<T> objects;
         try {
@@ -132,7 +142,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
         List<Object> fieldValues = new ArrayList<>();
 
-        UpsertBuilder upsertBuilder = new UpsertBuilder(aClass.getSimpleName());
+        UpsertBuilder upsertBuilder = new UpsertBuilder(getTableNameByClass(aClass));
         for (Field field : aClass.getDeclaredFields()) {
             if (field.isAnnotationPresent(Transient.class)) {
                 continue;
@@ -147,7 +157,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             }
 
             if (field.isAnnotationPresent(Id.class)) {
-                upsertBuilder.addOnConflictColumnName(field.getName());
+                upsertBuilder.addOnConflictColumnName(getColumnNameByField(field));
                 //Kedze sa robi upsert, tak nemoze byt ID 0, pretoze ho tam insertne ak to nie je duplikat.
                 // Preto sa prerusi cyklus, aby sa nepridal ID stlpec do upsertu.
                 if ((int) fieldValue == 0) {
@@ -156,7 +166,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             }
 
             fieldValues.add(fieldValue);
-            upsertBuilder.addColumnName(field.getName());
+            upsertBuilder.addColumnName(getColumnNameByField(field));
         }
         System.out.println();
         try {
@@ -203,6 +213,25 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         throw new PersistenceException("No " + annotationClass + " annotation for " + fields[0].getType().getName());
     }
 
+    private String getColumnNameByField(Field field){
+        String columnName = "";
+        if(field.isAnnotationPresent(javax.persistence.Column.class)) {
+            columnName = ((javax.persistence.Column) field.getAnnotation(javax.persistence.Column.class)).name();
+        }
+        if(columnName.isEmpty()){
+            columnName = field.getName();
+        }
+        return columnName;
+    }
+
+    private String getTableNameByClass(Class aClass){
+        String tableName = ((Entity) aClass.getAnnotation(Entity.class)).name();
+        if(tableName.isEmpty()){
+            tableName = aClass.getSimpleName();
+        }
+        return tableName;
+    }
+
     private <T> List<T> createObjectsFromResultSet(Class<T> aClass, ResultSet rs) {
         if (aClass == null || rs == null) {
             return null;
@@ -219,7 +248,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                     }
 
                     field.setAccessible(true);
-                    Object fieldValue = rs.getObject(field.getName());
+                    Object fieldValue = rs.getObject(getColumnNameByField(field));
                     if (field.isAnnotationPresent(ManyToOne.class)) {
                         field.set(object, get(field.getType(), (Integer) fieldValue)); //predpoklada sa, ze ID je int
                     } else {
