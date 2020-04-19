@@ -13,7 +13,7 @@ public class Main {
 
         PersistenceManager manager = new ReflectivePersistenceManager(conn);
 
-        manager.createTables(Person.class, Department.class);
+        manager.createTables();
 
         Department development = new Department("Development", "DVLP");
         Department marketing = new Department("Marketing", "MARK");

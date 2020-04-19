@@ -25,5 +25,20 @@
             <version>3.25.2</version>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.6.1</version>
+                <configuration>
+                    <source>10</source>
+                    <target>10</target>
+                    <proc>none</proc>  <!-- Vypnutie anotačného procesora -->
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>
 

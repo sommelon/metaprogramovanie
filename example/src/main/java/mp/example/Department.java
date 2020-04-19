@@ -1,5 +1,6 @@
 package mp.example;
 
+import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.Id;
 
@@ -7,6 +8,7 @@ import javax.persistence.Id;
 public class Department {
     @Id
 	private int id;
+    @Column(nullable = false)
     private String name;
     private String code;
 

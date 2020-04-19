@@ -4,7 +4,7 @@ import java.util.List;
 
 public interface PersistenceManager {
 
-    void createTables(Class... classes) throws PersistenceException;
+    void createTables() throws PersistenceException;
 
     <T> List<T> getAll(Class<T> clazz) throws PersistenceException;
 
