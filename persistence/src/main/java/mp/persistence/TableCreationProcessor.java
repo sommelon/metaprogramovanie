@@ -83,7 +83,7 @@ public class TableCreationProcessor extends AbstractProcessor {
             TypeElement fieldType = (TypeElement) processingEnv.getTypeUtils().asElement(field.asType());
             VariableElement idField = ((VariableElement) fieldType.getEnclosedElements().stream()
                     .filter(enclosedElement -> enclosedElement.getKind() == ElementKind.FIELD)
-                    .filter(f -> f.getAnnotation(Id.class) != null)
+                    .filter(fieldElement -> fieldElement.getAnnotation(Id.class) != null)
                     .findFirst().get());
 
             createTableBuilder.addForeignKey(
