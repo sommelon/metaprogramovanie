@@ -18,11 +18,9 @@ import javax.persistence.ManyToOne;
 import javax.persistence.Transient;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
-import javax.tools.JavaFileObject;
 import javax.tools.StandardLocation;
 import java.io.IOException;
 import java.io.Writer;
-import java.util.Optional;
 import java.util.Set;
 
 @SupportedAnnotationTypes("javax.persistence.Entity")

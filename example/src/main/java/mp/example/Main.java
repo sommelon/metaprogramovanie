@@ -2,17 +2,25 @@ package mp.example;
 
 import mp.persistence.PersistenceManager;
 import mp.persistence.ReflectivePersistenceManager;
+import mp.persistence.annotations.Atomic;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.List;
 
 public class Main {
+
+    private Connection conn;
+    private PersistenceManager manager;
+
     public static void main(String[] args) throws Exception {
-        Connection conn = DriverManager.getConnection("jdbc:sqlite:test.db");
+        new Main().test();
+    }
 
-        PersistenceManager manager = new ReflectivePersistenceManager(conn);
-
+    void test() throws SQLException {
+        conn = DriverManager.getConnection("jdbc:sqlite:test.db");
+        manager = new ReflectivePersistenceManager(conn);
         manager.createTables();
 
         Department development = new Department("Development", "DVLP");
@@ -40,7 +48,34 @@ public class Main {
             System.out.println("  " + person.getDepartment());
         }
 
+        tryWithoutException();
+        tryWithException();
+
         conn.close();
+    }
+
+    @Atomic
+    void tryWithoutException() {
+        Department sales = new Department("Sales", "SLS");
+        Person hruska = new Person("Peter", "Hruska", 27);
+        hruska.setDepartment(sales);
+        Person maco = new Person("Marek", "Maco", 48);
+        maco.setDepartment(sales);
+
+        manager.save(hruska);
+        manager.save(maco);
+    }
+
+    @Atomic
+    void tryWithException() {
+        Department sales = new Department("Sales", "SLS");
+        Person hruska = new Person(null, "Hruska", 27);
+        hruska.setDepartment(sales);
+        Person maco = new Person(null, "Maco", 48);
+        maco.setDepartment(sales);
+
+        manager.save(hruska);
+        manager.save(maco);
     }
 }
 

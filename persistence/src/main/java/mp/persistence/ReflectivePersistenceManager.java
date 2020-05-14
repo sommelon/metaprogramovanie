@@ -39,15 +39,6 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         } catch (IOException | SQLException e) {
             e.printStackTrace();
         }
-
-//        for (Class aClass : classes) {
-//            try {
-//                Statement statement = connection.createStatement();
-//                statement.executeUpdate();
-//            } catch (SQLException e) {
-//                e.printStackTrace();
-//            }
-//        }
     }
 
     @Override
@@ -79,12 +70,11 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
         Field idField = HelperMethods.getFirstAnnotatedField(aClass.getDeclaredFields(), Id.class);
 
-        T object;
-        try {
-            object = getBy(aClass, HelperMethods.getColumnNameByField(idField), id).get(0);
-        } catch (IndexOutOfBoundsException e) {
-            e.printStackTrace();
-            return null;
+        T object = null;
+
+        List<T> list = getBy(aClass, HelperMethods.getColumnNameByField(idField), id);
+        if (!list.isEmpty()) {
+            object = list.get(0);
         }
 
         return object;
@@ -127,6 +117,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             if (field.isAnnotationPresent(Transient.class)) {
                 continue;
             }
+
             Object fieldValue = null;
             try {
                 field.setAccessible(true);
@@ -134,6 +125,10 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                 field.setAccessible(false);
             } catch (IllegalAccessException e) {
                 e.printStackTrace();
+            }
+
+            if (fieldValue != null && fieldValue.getClass().getPackageName().startsWith("org.aspectj")) {
+                continue;
             }
 
             if (field.isAnnotationPresent(Id.class)) {
@@ -148,28 +143,31 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             fieldValues.add(fieldValue);
             upsertBuilder.addColumnName(HelperMethods.getColumnNameByField(field));
         }
+
         System.out.println();
+
         try {
             PreparedStatement ps = connection.prepareStatement(upsertBuilder.toString(), Statement.RETURN_GENERATED_KEYS);
             for (int i = 0; i < fieldValues.size(); i++) {
-                if (fieldValues.get(i) == null) {
+                Object fieldValue = fieldValues.get(i);
+
+                if (fieldValue == null) {
                     ps.setNull(i + 1, Types.NULL);
-                } else if (fieldValues.get(i).getClass().getPackageName().startsWith("java.lang")) {
-                    ps.setObject(i + 1, fieldValues.get(i));
+                } else if (fieldValue.getClass().getPackageName().startsWith("java.lang")) {
+                    ps.setObject(i + 1, fieldValue);
                 } else {
-                    Field field = HelperMethods.getFirstAnnotatedField(fieldValues.get(i).getClass().getDeclaredFields(), Id.class);
+                    Field idFieldOfAReferencedClass = HelperMethods.getFirstAnnotatedField(fieldValue.getClass().getDeclaredFields(), Id.class);
 
-                    field.setAccessible(true);
-                    if (field.getInt(fieldValues.get(i)) == 0) {
-                        ps.setInt(i + 1, save(fieldValues.get(i)));
+                    idFieldOfAReferencedClass.setAccessible(true);
+                    if (idFieldOfAReferencedClass.getInt(fieldValue) == 0) {
+                        ps.setInt(i + 1, save(fieldValue));
                     } else {
-                        ps.setInt(i + 1, field.getInt(fieldValues.get(i)));
+                        ps.setInt(i + 1, idFieldOfAReferencedClass.getInt(fieldValue));
                     }
-
-                    field.setAccessible(false);
+                    idFieldOfAReferencedClass.setAccessible(false);
                     break;
                 }
-                System.out.print(fieldValues.get(i) + ", ");
+                System.out.print(fieldValue + ", ");
             }
 
             ps.executeUpdate();
@@ -179,6 +177,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             }
         } catch (SQLException | IllegalAccessException e) {
             e.printStackTrace();
+            throw new PersistenceException(e.getMessage());
         }
 
         return 0;
@@ -195,17 +194,15 @@ public class ReflectivePersistenceManager implements PersistenceManager {
             while (rs.next()) {
                 T object = aClass.getConstructor().newInstance();
                 for (Field field : aClass.getDeclaredFields()) {
-                    if (field.isAnnotationPresent(Transient.class)) {
+                    if (field.isAnnotationPresent(Transient.class) ||
+                            field.isAnnotationPresent(ManyToOne.class) ||
+                            field.getType().getPackageName().startsWith("org.aspectj")) {
                         continue;
                     }
 
                     field.setAccessible(true);
                     Object fieldValue = rs.getObject(HelperMethods.getColumnNameByField(field));
-                    if (field.isAnnotationPresent(ManyToOne.class)) {
-                        field.set(object, get(field.getType(), (Integer) fieldValue)); //predpoklada sa, ze ID je int
-                    } else {
-                        field.set(object, fieldValue);
-                    }
+                    field.set(object, fieldValue);
                     field.setAccessible(false);
                 }
                 objects.add(object);
@@ -219,4 +216,7 @@ public class ReflectivePersistenceManager implements PersistenceManager {
         return objects;
     }
 
+    public Connection getConnection() {
+        return connection;
+    }
 }
