@@ -19,13 +19,13 @@ public aspect TransactionManagementAspect {
             connection.setAutoCommit(false);
             Object value = proceed();
             connection.commit();
-            System.out.println("committed");
+            System.out.println("\nCOMMITTED");
 
             return value;
         } catch (Exception e) {
             try {
                 connection.rollback();
-                System.out.println("rolled back");
+                System.out.println("\nROLLED BACK");
             } catch (SQLException ex) {
                 ex.printStackTrace();
             }

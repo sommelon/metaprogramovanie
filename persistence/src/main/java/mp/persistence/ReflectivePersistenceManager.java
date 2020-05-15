@@ -3,10 +3,7 @@ package mp.persistence;
 import mp.persistence.util.HelperMethods;
 import mp.persistence.util.sql.UpsertBuilder;
 
-import javax.persistence.Entity;
-import javax.persistence.Id;
-import javax.persistence.ManyToOne;
-import javax.persistence.Transient;
+import javax.persistence.*;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -160,15 +157,19 @@ public class ReflectivePersistenceManager implements PersistenceManager {
 
                     idFieldOfAReferencedClass.setAccessible(true);
                     if (idFieldOfAReferencedClass.getInt(fieldValue) == 0) {
-                        ps.setInt(i + 1, save(fieldValue));
+                        int foreignKey = save(fieldValue);
+                        ps.setInt(i + 1, foreignKey);
                     } else {
                         ps.setInt(i + 1, idFieldOfAReferencedClass.getInt(fieldValue));
                     }
                     idFieldOfAReferencedClass.setAccessible(false);
-                    break;
                 }
-                System.out.print(fieldValue + ", ");
+
             }
+            System.out.println(upsertBuilder.toString());
+            System.out.print("  ");
+            fieldValues.forEach(fieldValue -> System.out.print(fieldValue +", "));
+            System.out.println();
 
             ps.executeUpdate();
             ResultSet rs = ps.getGeneratedKeys();
@@ -195,14 +196,25 @@ public class ReflectivePersistenceManager implements PersistenceManager {
                 T object = aClass.getConstructor().newInstance();
                 for (Field field : aClass.getDeclaredFields()) {
                     if (field.isAnnotationPresent(Transient.class) ||
-                            field.isAnnotationPresent(ManyToOne.class) ||
                             field.getType().getPackageName().startsWith("org.aspectj")) {
                         continue;
                     }
 
                     field.setAccessible(true);
                     Object fieldValue = rs.getObject(HelperMethods.getColumnNameByField(field));
-                    field.set(object, fieldValue);
+                    if (field.isAnnotationPresent(ManyToOne.class)) {
+                        ManyToOne annotation = field.getAnnotation(ManyToOne.class);
+
+                        if (annotation.fetch() != FetchType.LAZY) {
+                            Class classToLoad = field.getType();
+                            if (annotation.targetEntity() != void.class){
+                                classToLoad = annotation.targetEntity();
+                            }
+                            field.set(object, get(classToLoad, (Integer) fieldValue)); //predpoklada sa, ze ID je int
+                        }
+                    } else {
+                        field.set(object, fieldValue);
+                    }
                     field.setAccessible(false);
                 }
                 objects.add(object);

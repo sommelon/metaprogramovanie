@@ -57,8 +57,6 @@ public class UpsertBuilder {
         }
         queryStringBuilder.setLength(queryStringBuilder.length() - 1);
 
-        System.out.println(queryStringBuilder);
-
         return queryStringBuilder.toString();
     }
 }

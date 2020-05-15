@@ -1,5 +1,6 @@
 package mp.example;
 
+import mp.persistence.PersistenceException;
 import mp.persistence.PersistenceManager;
 import mp.persistence.ReflectivePersistenceManager;
 import mp.persistence.annotations.Atomic;
@@ -38,10 +39,13 @@ public class Main {
         manager.save(novak);
 
         hrasko = manager.get(Person.class, 1);
-        System.out.println(hrasko);
+        System.out.println("\nGET: "+ hrasko);
+        System.out.println("  "+ hrasko.getDepartment());
         hrasko.setAge(31);
         manager.save(hrasko);
+        System.out.println("\nALREADY LOADED "+ hrasko.getDepartment());
 
+        System.out.println("\n\n-----------GET ALL-----------");
         List<Person> persons = manager.getAll(Person.class);
         for (Person person : persons) {
             System.out.println(person);
@@ -49,13 +53,19 @@ public class Main {
         }
 
         tryWithoutException();
-        tryWithException();
+
+        try {
+            tryWithException();
+        }catch (PersistenceException e){
+            e.printStackTrace();
+        }
 
         conn.close();
     }
 
     @Atomic
     void tryWithoutException() {
+        System.out.println("\n\n-----------TESTING COMMIT-----------");
         Department sales = new Department("Sales", "SLS");
         Person hruska = new Person("Peter", "Hruska", 27);
         hruska.setDepartment(sales);
@@ -68,6 +78,7 @@ public class Main {
 
     @Atomic
     void tryWithException() {
+        System.out.println("\n\n-----------TESTING ROLLBACK-----------");
         Department sales = new Department("Sales", "SLS");
         Person hruska = new Person(null, "Hruska", 27);
         hruska.setDepartment(sales);
