@@ -27,13 +27,18 @@ import java.util.Set;
 @SupportedSourceVersion(SourceVersion.RELEASE_10)
 public class TableCreationProcessor extends AbstractProcessor {
     public static final String PATH = "META-INF/services/CreateTables.sql";
+    private boolean fileOpened = false;
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+        if (fileOpened)
+            return false;
+
         try {
             FileObject fo = processingEnv.getFiler().createResource(StandardLocation.CLASS_OUTPUT,
                     "", PATH);
             Writer writer = fo.openWriter();
+            fileOpened = true;
 
             roundEnv.getElementsAnnotatedWith(Entity.class)
                     .forEach(entityClass -> {
